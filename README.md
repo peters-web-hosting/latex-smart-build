@@ -13,6 +13,22 @@ A GitHub Action that intelligently compiles LaTeX documents with automatic depen
 - 📝 **Optional Word Count** – Automatically updates `\wordcount{}` in specified top-level TeX files
 - 🛠️ **Flexible Configuration** – Choose your compiler and customize settings
 ## Usage
+## Breaking Changes in v2.0.0
+
+### Removed `wordcount` input
+The `wordcount` boolean input has been removed. Word count functionality is now controlled solely by the `wordcount-files` input:
+- If `wordcount-files` contains a list of files, word counts will be updated
+- If `wordcount-files` is empty or omitted, no word counts will be updated
+
+### Migration Guide
+```yaml
+# Old (v1.x)
+wordcount: true
+wordcount-files: 'thesis.tex,paper.tex'
+
+# New (v2.x) 
+wordcount-files: 'thesis.tex,paper.tex'
+```
 
 ### Basic Usage
 
@@ -29,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: PeterTSmith1997/smart-build-for-latex@1.0.0
+      - uses: PeterTSmith1997/smart-build-for-latex@2.0.0
 ```
 
 ### Advanced Configuration
@@ -45,14 +61,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: PeterTSmith1997/smart-build-for-latex@1.0.0
+      - uses: PeterTSmith1997/smart-build-for-latex@2.0.0
         with:
           compiler: 'pdflatex'
           max-drafts: '5'
           output-dir: 'pdf-builds'
           biber: 'true'
           commit-message: 'Build PDFs'
-          wordcount: 'true'
           wordcount-files: 'main.tex,chapter1.tex'
 ```
 
@@ -65,7 +80,6 @@ jobs:
 | `output-dir` | Directory to store compiled PDFs | No | `drafts` |
 | `biber` | Run Biber for bibliography processing | No | `true` |
 | `commit-message` | Commit message for PDF updates | No | `Update PDFs` |
-| `wordcount` | Enable updating word count | No | `true` |
 | `wordcount-files` | Comma-separated list of top-level TeX files to update wordcount for | No | `''` |
 
 ## How It Works
@@ -99,37 +113,34 @@ Supports deeply nested `\include{}` or `\input{}` paths.
 ### Dissertation/Thesis Repository
 
 ```yaml
-uses: PeterTSmith1997/smart-build-for-latex@1.0.0
+uses: PeterTSmith1997/smart-build-for-latex@2.0.0
 with:
   compiler: 'xelatex'
   max-drafts: '10'
   output-dir: 'thesis-builds'
-  wordcount: 'true'
   wordcount-files: 'thesis/thesis.tex,thesis/chapters/ch1.tex'
 ```
 
 ### Multiple Papers Repository
 
 ```yaml
-uses: PeterTSmith1997/smart-build-for-latex@1.0.0
+uses: PeterTSmith1997/smart-build-for-latex@2.0.0
 with:
   compiler: 'pdflatex'
   max-drafts: '3'
   output-dir: 'papers'
   commit-message: 'Compile papers'
-  wordcount: 'true'
   wordcount-files: 'paper1.tex,paper2.tex'
 ```
 
 ### Book/Manual with Complex Structure
 
 ```yaml
-uses: PeterTSmith1997/smart-build-for-latex@1.0.0
+uses: PeterTSmith1997/smart-build-for-latex@2.0.0
 with:
   compiler: 'lualatex'
   biber: 'true'
   max-drafts: '5'
-  wordcount: 'false'
 ```
 
 ## Performance
