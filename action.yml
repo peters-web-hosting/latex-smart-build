@@ -36,6 +36,11 @@ inputs:
     description: 'Comma-separated list of top-level TeX files to update wordcount for (leave empty to disable)'
     required: false
     default: ''
+  
+  exclude-files:
+    description: 'Comma-separated list of TeX files to never recompile (e.g., archived documents, stable releases)'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -60,14 +65,55 @@ runs:
       id: buildset
       shell: bash
       run: |
+        # Parse exclude list
+        parse_exclude_list() {
+          local exclude_list=""
+          if [[ "${{ inputs.exclude-files }}" != "" ]]; then
+            IFS=',' read -ra EXCLUDED <<< "${{ inputs.exclude-files }}"
+            for ex in "${EXCLUDED[@]}"; do
+              # Trim whitespace and normalize path
+              ex=$(echo "$ex" | xargs)
+              # Add .tex extension if not present
+              [[ "$ex" != *.tex ]] && ex="${ex}.tex"
+              # Normalize path (remove leading ./ if present)
+              ex="${ex#./}"
+              exclude_list="$exclude_list $ex"
+            done
+          fi
+          echo "$exclude_list"
+        }
+        
+        # Check if file is in exclude list
+        is_excluded() {
+          local file="$1"
+          local exclude_list="$2"
+          # Normalize the file path for comparison
+          local norm_file="${file#./}"
+          
+          for excluded in $exclude_list; do
+            # Check exact match or basename match
+            if [[ "$norm_file" == "$excluded" ]] || [[ "$(basename "$norm_file")" == "$excluded" ]]; then
+              return 0
+            fi
+          done
+          return 1
+        }
+        
         find_dependent_mains() {
           local changed_file="$1"
+          local exclude_list="$2"
           local basename=$(basename "$changed_file" .tex)
           local rel_path="${changed_file#./}"
           local rel_path_no_ext="${rel_path%.tex}"
           local mains=()
 
           for main in ${{ steps.toplevel.outputs.files }}; do
+            # Skip if this main file is in the exclude list
+            if is_excluded "$main" "$exclude_list"; then
+              echo "⚠️ Skipping excluded file: $main" >&2
+              continue
+            fi
+            
             if [[ "$main" == "$changed_file" ]]; then
               mains+=("$main")
               continue
@@ -89,15 +135,23 @@ runs:
           echo "${mains[@]}" | tr ' ' '\n' | sort -u
         }
 
+        EXCLUDE_LIST=$(parse_exclude_list)
+        [[ -n "$EXCLUDE_LIST" ]] && echo "📌 Excluded files:$EXCLUDE_LIST"
+        
         FILES=""
         CHANGED="${{ steps.changed.outputs.all_changed_files }}"
 
         for file in $CHANGED; do
           if [[ "$file" == *.tex ]]; then
             if grep -q '\\documentclass' "$file" 2>/dev/null; then
-              [[ ! " $FILES " =~ " $file " ]] && FILES="$FILES $file"
+              # Check if this main file should be excluded
+              if ! is_excluded "$file" "$EXCLUDE_LIST"; then
+                [[ ! " $FILES " =~ " $file " ]] && FILES="$FILES $file"
+              else
+                echo "⚠️ Skipping excluded file: $file"
+              fi
             else
-              dependent_mains=$(find_dependent_mains "$file")
+              dependent_mains=$(find_dependent_mains "$file" "$EXCLUDE_LIST")
               for main in $dependent_mains; do
                 [[ ! " $FILES " =~ " $main " ]] && FILES="$FILES $main"
               done
@@ -117,9 +171,32 @@ runs:
           IFS=',' read -ra WC_FILES <<< "${{ inputs.wordcount-files }}"
           CHANGED="${{ steps.changed.outputs.all_changed_files }}"
           
+          # Parse exclude list for wordcount checking
+          EXCLUDE_LIST=""
+          if [[ "${{ inputs.exclude-files }}" != "" ]]; then
+            IFS=',' read -ra EXCLUDED <<< "${{ inputs.exclude-files }}"
+            for ex in "${EXCLUDED[@]}"; do
+              ex=$(echo "$ex" | xargs)
+              [[ "$ex" != *.tex ]] && ex="${ex}.tex"
+              EXCLUDE_LIST="$EXCLUDE_LIST ${ex#./}"
+            done
+          fi
+          
           for wc_file in "${WC_FILES[@]}"; do
             # Trim whitespace
             wc_file=$(echo "$wc_file" | xargs)
+            
+            # Skip if this file is in the exclude list
+            norm_wc="${wc_file#./}"
+            skip=false
+            for excluded in $EXCLUDE_LIST; do
+              if [[ "$norm_wc" == "$excluded" ]] || [[ "$(basename "$norm_wc")" == "$excluded" ]]; then
+                echo "⚠️ Skipping word count for excluded file: $wc_file"
+                skip=true
+                break
+              fi
+            done
+            [[ "$skip" == true ]] && continue
             
             # Check if this wordcount file or any of its dependencies have changed
             if echo "$CHANGED" | grep -q "$wc_file"; then
